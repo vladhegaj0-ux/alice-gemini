@@ -16,16 +16,19 @@ async def query_gemini(prompt: str) -> str:
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "maxOutputTokens": 200,
-            "temperature": 0.7
+            "maxOutputTokens": 180,
+            "temperature": 0.5,
+            "thinkingConfig": {
+                "thinkingBudget": 0  # Полное отключение рассуждений для мгновенного старта генерации
+            }
         }
     }
 
     params = {"key": GEMINI_API_KEY}
 
     try:
-        # 2.6 секунды — удерживает ответ в пределах лимита Яндекса
-        async with httpx.AsyncClient(timeout=2.6) as client:
+        # 4.5 секунды — максимальный порог под 5-секундный лимит Яндекса
+        async with httpx.AsyncClient(timeout=4.5) as client:
             resp = await client.post(API_URL, params=params, json=payload, headers=headers)
             
             if resp.status_code == 200:
@@ -33,15 +36,18 @@ async def query_gemini(prompt: str) -> str:
                 candidates = data.get("candidates", [])
                 if candidates:
                     parts = candidates[0].get("content", {}).get("parts", [])
-                    if parts:
-                        return parts[0].get("text", "Ответ пуст.")
+                    for part in parts:
+                        if "text" in part and not part.get("thought", False):
+                            return part["text"]
+                    if parts and "text" in parts[0]:
+                        return parts[0]["text"]
                 return "Модель прислала пустой результат."
             else:
                 error_info = resp.json().get("error", {})
-                return f"Google API Error ({resp.status_code}): {error_info.get('message', resp.text)[:200]}"
+                return f"Ошибка Google API ({resp.status_code}): {error_info.get('message', resp.text)[:200]}"
                 
     except httpx.TimeoutException:
-        return "Нейросеть не успела ответить вовремя. Повторите запрос или спросите короче."
+        return "Нейросеть не успела ответить за 4.5 секунды. Повторите запрос или задайте вопрос короче."
     except Exception as e:
         return f"Ошибка запроса: {str(e)[:150]}"
 
@@ -59,7 +65,7 @@ async def yandex_dialog_webhook(request: Request):
     user_text = req_body.get("command", "") or req_body.get("original_utterance", "")
     is_new = session.get("new", False)
 
-    # Приветствие отдаётся сразу, не тратя секунды на обращение к Gemini
+    # Мгновенное приветствие при старте без обращения к Gemini
     if is_new or not user_text.strip():
         return {
             "version": version,
@@ -72,7 +78,7 @@ async def yandex_dialog_webhook(request: Request):
 
     reply_text = await query_gemini(user_text)
 
-    # Обрезка под максимальный лимит реплики Алисы
+    # Ограничение под лимит одной фразы Алисы (1024 символа)
     if len(reply_text) > 950:
         reply_text = reply_text[:947] + "..."
 
