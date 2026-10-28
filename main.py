@@ -13,24 +13,20 @@ async def query_gemini(prompt: str) -> str:
 
     headers = {"Content-Type": "application/json"}
     payload = {
-        "systemInstruction": {
-            "parts": [{
-                "text": "Ты голосовой помощник для Алисы. Отвечай кратко, понятно и по существу (2-3 предложения). Не используй разметку markdown."
-            }]
-        },
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "maxOutputTokens": 100,  # Лимит 100 токенов
-            "temperature": 0.5,
+            "maxOutputTokens": 150,
+            "temperature": 0.4,
             "thinkingConfig": {
-                "thinkingBudget": 0  # Без траты времени на размышления
+                "thinkingBudget": 0
             }
         }
     }
     params = {"key": GEMINI_API_KEY}
 
     try:
-        async with httpx.AsyncClient(timeout=3.5) as client:
+        # Лимит 3.0 сек гарантирует ответ до разрыва соединения Яндексом
+        async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.post(API_URL, params=params, json=payload, headers=headers)
             
             if resp.status_code == 200:
@@ -40,19 +36,19 @@ async def query_gemini(prompt: str) -> str:
                     parts = candidates[0].get("content", {}).get("parts", [])
                     for part in parts:
                         if "text" in part and not part.get("thought", False):
-                            return part["text"].strip()
+                            return part["text"]
                     if parts and "text" in parts[0]:
-                        return parts[0]["text"].strip()
+                        return parts[0]["text"]
                 return "Модель прислала пустой ответ."
             
             if resp.status_code == 503:
-                return "Сервер перегружен. Повторите запрос через секунду."
+                return "Серверы перегружены. Повторите запрос через секунду."
                 
             err = resp.json().get("error", {}).get("message", resp.text)
-            return f"Ошибка API ({resp.status_code}): {err[:120]}"
+            return f"Ошибка API ({resp.status_code}): {err[:150]}"
             
     except httpx.TimeoutException:
-        return "Нейросеть не успела ответить вовремя. Попробуйте ещё раз."
+        return "Нейросеть долго думает. Попробуйте задать вопрос короче."
     except Exception as e:
         return f"Сетевая ошибка: {str(e)[:100]}"
 
