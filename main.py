@@ -9,7 +9,10 @@ client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 @app.post("/webhook")
 async def yandex_dialog_webhook(request: Request):
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
 
     version = data.get("version", "1.0")
     session = data.get("session", {})
@@ -23,26 +26,27 @@ async def yandex_dialog_webhook(request: Request):
             "version": version,
             "session": session,
             "response": {
-                "text": "Привет! Я подключен к Gemini Flash. Какой у вас вопрос?",
+                "text": "Привет! Я на связи через Gemini. О чем хотите спросить?",
                 "end_session": False
             }
         }
 
-    reply_text = "Не удалось связаться с нейросетью."
+    reply_text = "Не удалось получить ответ."
     if client:
         try:
-            response = client.interactions.create(
-                model="gemini-3.8-flash",
-                input=user_text,
-                thinking_level="low"
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=user_text,
             )
-            if response.output:
-                reply_text = response.output_text if hasattr(response, "output_text") else str(response.output)
+            if response and response.text:
+                reply_text = response.text
         except Exception as e:
-            reply_text = f"Ошибка: {e}"
+            reply_text = f"Ошибка Gemini: {str(e)[:200]}"
+    else:
+        reply_text = "API-ключ не настроен."
 
-    if len(reply_text) > 1000:
-        reply_text = reply_text[:997] + "..."
+    if len(reply_text) > 950:
+        reply_text = reply_text[:947] + "..."
 
     return {
         "version": version,
