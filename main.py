@@ -1,4 +1,4 @@
-import os
+9import os
 from fastapi import FastAPI, Request
 from google import genai
 
@@ -35,7 +35,7 @@ async def yandex_dialog_webhook(request: Request):
     if client:
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.8-flash",
                 contents=user_text,
             )
             if response and response.text:
